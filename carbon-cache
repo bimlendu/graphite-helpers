@@ -1,0 +1,115 @@
+#!/bin/bash
+#
+# carbon-cache - This script starts and stops multi-instance carbon-cache service.
+#
+# chkconfig:   - 85 15
+# description: carbon-cache accepts graphite metrics and writes them to
+#              disk using whisper
+# processname: carbon-cache.py
+# config:      /etc/sysconfig/carbon-cache
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+# Check that networking is up.
+[ "$NETWORKING" = "no" ] && exit 0
+
+exec="/opt/graphite/bin/carbon-cache.py"
+prog=$(basename "$exec")
+PID_DIR="/opt/graphite/storage"
+GRAPHITE_STORAGE_DIR="/opt/graphite/storage"
+INSTANCES=2
+NAME="carbon-cache"
+
+if [ -f /etc/sysconfig/carbon-cache ]; then
+    . /etc/sysconfig/carbon-cache
+fi
+
+test -x $exec || exit 0
+
+export GRAPHITE_STORAGE_DIR
+
+restart() {
+    stop
+    start
+}
+
+rh_status() {
+    for INSTANCE in $(seq 1 $INSTANCES); do
+      if [ -f "${PID_DIR}/${NAME}-${INSTANCE}.pid" ]; then
+        PID=`cat "${PID_DIR}/${NAME}-${INSTANCE}.pid"`
+        echo -n "${NAME}-${INSTANCE} :: "
+        status -p "${PID_DIR}/${NAME}-${INSTANCE}.pid" "$prog"
+        echo
+      fi
+    done
+    for INSTANCE in $(seq 1 $INSTANCES); do
+      if [ ! -f "${PID_DIR}/${NAME}-${INSTANCE}.pid" ]; then
+        exit 1
+      fi
+    done
+    exit 0
+}
+
+start() {
+    for INSTANCE in $(seq 1 $INSTANCES); do
+      echo -ne "Starting ${NAME} instance ${INSTANCE} :: \n"
+      daemon --pidfile="${PID_DIR}/${NAME}-${INSTANCE}.pid" "$exec" --instance=${INSTANCE} start  >/dev/null
+      retval=$?
+      if [ $retval -eq 0 ]
+      then
+        echo -ne "succeeded.. \n"
+      else
+        echo -ne "failed.. \n"
+        return $retval
+      fi
+    done
+}
+
+stop() {
+    for INSTANCE in $(seq 1 $INSTANCES); do
+      echo -ne "Stopping ${NAME} instance ${INSTANCE} :: \n"
+      killproc -p "${PID_DIR}/${NAME}-${INSTANCE}.pid" "$prog"
+      retval=$?
+      if [ $retval -eq 0 ]
+      then
+        echo -ne "succeeded.. \n"
+      else
+        echo -ne "failed.. \n"
+        return $retval
+      fi
+    done
+}
+
+case $1 in
+    condrestart|try-restart)
+        rh_status 2>/dev/null && restart
+        ;;
+    reload|force-reload)
+        restart
+        ;;
+    restart)
+        restart
+        ;;
+    start)
+        start
+        ;;
+    status)
+        rh_status
+        ;;
+    status_q)
+        rh_status >/dev/null 2>&1
+        ;;
+    stop)
+        stop
+        ;;
+    *)
+        echo $"Usage: $0 {start|stop|status|restart|condrestart|try-restart|reload|force-reload}"
+        exit 2
+        ;;
+esac
+
+exit $?
